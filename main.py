@@ -1,36 +1,42 @@
 import os
 from tempfile import TemporaryDirectory
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from llama_index.embeddings.openai import OpenAIEmbedding
-from utils.gdrive import GoogleDriveClient
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.text_splitter import SentenceSplitter
 import tempfile
 from typing import List, Dict
 from dotenv import load_dotenv, find_dotenv
-from services.db import DatabaseService
-
+from dependencies.security import validate_token
 load_dotenv(find_dotenv())
+from utils.gdrive import GoogleDriveClient  # noqa: E402
+from services.db import DatabaseService  # noqa: E402
+
 
 app = FastAPI()
 
 # Configuration
 CREDENTIALS_PATH = os.path.join(os.getcwd(), ".credentials", "service-account-key.json")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DB_CONNECTION = os.getenv("DATABASE_URL", "postgresql://pgvector:pgvector@localhost:5433/pgvector_db")
-
-# Initialize services
-gclient = GoogleDriveClient(CREDENTIALS_PATH)
-db_service = DatabaseService(DB_CONNECTION)
-embedding_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
+DB_CONNECTION = os.getenv("DATABASE_URL")
 
 class DriveUrl(BaseModel):
     driver_id: str
     conversation_id: str
 
-@app.post("/upload")
-async def upload_file(file: DriveUrl):
+
+gclient = GoogleDriveClient(CREDENTIALS_PATH)
+db_service = DatabaseService(DB_CONNECTION)
+embedding_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
+
+
+@app.post("/api/v1/upload")
+async def upload_file(file: DriveUrl, user = Depends(validate_token)):
+    owner = user['UserAttributes'][0]['Value']
+    verified = user['UserAttributes'][1]['Value']
+    if not verified:
+        raise HTTPException(status_code=403, detail="User is not verified")
     try:
         file_id, file_type = gclient.get_gdrive_id(file.driver_id)
         if file_id is None:
@@ -63,6 +69,7 @@ async def upload_file(file: DriveUrl):
                 nodes = await process_document(temp_dir, embedding_model)
                 formatted_metadata = metadata_handler(metadata)
                 formatted_metadata['conversation_id'] = file.conversation_id
+                formatted_metadata['owner'] = owner
 
                 # Insert document and chunks into database
                 item = db_service.insert_document_with_embeddings(nodes, formatted_metadata)
@@ -77,6 +84,7 @@ async def upload_file(file: DriveUrl):
                     "message": "Files processed and stored successfully",
                     "processed_files": 1,
                     "conversation_id": file.conversation_id,
+                    "owner": owner,
                     **formatted_metadata,
                     "nodes": len(nodes),
                 }                
@@ -133,6 +141,5 @@ def metadata_handler(metadata: Dict) -> Dict:
         "file_name": metadata.get('name'),
         "id": metadata.get('id'),
         "uri": metadata.get('webViewLink'),
-        "owner": metadata.get('owners', [{}])[0].get('emailAddress'),
         "mime_type": metadata.get('mimeType')
     }
