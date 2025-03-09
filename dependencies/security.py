@@ -15,9 +15,16 @@ def validate_token(http_authorization_credentials=Depends(reusable_oauth2)) -> s
         user = client.get_user(
             AccessToken=http_authorization_credentials.credentials
         )        
-        return user
-    except Exception as e:
+    except Exception as _:
         raise HTTPException(
             status_code=403,
             detail="Could not validate credentials",
         )
+    is_verified = user['UserAttributes'][1]['Value']
+    if is_verified != 'true':
+        raise HTTPException(
+            status_code=403,
+            detail="User is not verified",
+        )
+    return user
+

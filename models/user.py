@@ -1,9 +1,9 @@
-from .common import Base, BaseConfig
+from .base import Base
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 class User(Base):
@@ -31,8 +31,6 @@ class UserBase(BaseModel):
     email: str
     active: Optional[bool] = True
 
-    class Config(BaseConfig):
-        pass
 
 class UserCreate(UserBase):
     pass
@@ -46,7 +44,4 @@ class UserResponse(UserBase):
     id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config(BaseConfig):
-        pass
 

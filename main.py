@@ -12,8 +12,8 @@ from dependencies.security import validate_token
 load_dotenv(find_dotenv())
 from utils.gdrive import GoogleDriveClient  # noqa: E402
 from services.db import DatabaseService  # noqa: E402
-
-
+from services.user import UserService # noqa: E402
+from services.embedding import EmbeddingService # noqa: E402
 app = FastAPI()
 
 # Configuration
@@ -28,15 +28,19 @@ class DriveUrl(BaseModel):
 
 gclient = GoogleDriveClient(CREDENTIALS_PATH)
 db_service = DatabaseService(DB_CONNECTION)
-embedding_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
+embedding_service = EmbeddingService(OPENAI_API_KEY)
 
 
 @app.post("/api/v1/upload")
 async def upload_file(file: DriveUrl, user = Depends(validate_token)):
     owner = user['UserAttributes'][0]['Value']
-    verified = user['UserAttributes'][1]['Value']
-    if not verified:
-        raise HTTPException(status_code=403, detail="User is not verified")
+    
+    user_service = UserService(db_service.session)
+    
+    user = user_service.get_user_by_email(owner)
+    if not user:
+        user = user_service.create_user(owner)
+    
     try:
         file_id, file_type = gclient.get_gdrive_id(file.driver_id)
         if file_id is None:
@@ -66,10 +70,10 @@ async def upload_file(file: DriveUrl, user = Depends(validate_token)):
                     raise HTTPException(status_code=500, detail="No file metadata received")
 
                 # Process document and get chunks with embeddings
-                nodes = await process_document(temp_dir, embedding_model)
-                formatted_metadata = metadata_handler(metadata)
-                formatted_metadata['conversation_id'] = file.conversation_id
-                formatted_metadata['owner'] = owner
+                nodes = await embedding_service.process_document(temp_dir)
+                formatted_metadata = embedding_service.metadata_handler(
+                    metadata, owner, file.conversation_id
+                )
 
                 # Insert document and chunks into database
                 item = db_service.insert_document_with_embeddings(nodes, formatted_metadata)
@@ -100,46 +104,3 @@ async def upload_file(file: DriveUrl, user = Depends(validate_token)):
             detail=f"Upload process failed: {str(e)}"
         )
 
-async def process_document(file_path: str, embedding_model: OpenAIEmbedding) -> List[Dict]:
-    """
-    Process a document: load, split, and embed.
-    
-    Args:
-        file_path (str): Path to the document
-        embedding_model: OpenAI embedding model instance
-    
-    Returns:
-        List[Dict]: List of chunks with their embeddings
-    """
-    try:
-        # 1. Load document
-        loader = SimpleDirectoryReader(file_path)
-        documents = loader.load_data()
-        text_splitter = SentenceSplitter(chunk_size=1000, chunk_overlap=200)
-        nodes = text_splitter.get_nodes_from_documents(documents)
-        
-        # 2. Generate embeddings for each chunk
-        for node in nodes:
-            node.embedding = await embedding_model.aget_text_embedding(node.get_content())
-            
-        return nodes
-        
-    except Exception as e:
-        raise Exception(f"Failed to process document: {str(e)}")
-
-def metadata_handler(metadata: Dict) -> Dict:
-    """
-    Extract and format metadata from Google Drive file.
-    
-    Args:
-        metadata (Dict): Raw metadata from Google Drive
-        
-    Returns:
-        Dict: Formatted metadata
-    """
-    return {
-        "file_name": metadata.get('name'),
-        "id": metadata.get('id'),
-        "uri": metadata.get('webViewLink'),
-        "mime_type": metadata.get('mimeType')
-    }

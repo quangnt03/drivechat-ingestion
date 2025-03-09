@@ -22,8 +22,7 @@ class DatabaseService:
         
         # Create all tables before creating the session
         try:
-            # Drop existing tables and recreate them
-            Base.metadata.drop_all(bind=self.engine)
+            # Drop existing tables and recreate thems
             
             # Enable pgvector extension
             with self.engine.connect() as conn:
