@@ -1,7 +1,8 @@
 from .base import Base
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+import uuid
+from sqlalchemy import Column, String, Boolean
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -10,20 +11,18 @@ class User(Base):
     """SQLAlchemy model for users table."""
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False, index=True)
     display_name = Column(String(255), nullable=False)
     active = Column(Boolean, default=True)
-    email = Column(String(255), unique=True, nullable=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
-    conversations = relationship("Conversation", back_populates="user")
-    messages = relationship("Message", back_populates="user")
-    owned_items = relationship("Item", back_populates="owner")
+    owned_items = relationship("Item", back_populates="owner", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<User(id={self.id}, display_name='{self.display_name}')>"
+        return f"<User(id={self.id}, email='{self.email}')>"
 
 # Pydantic models for request/response validation
 class UserBase(BaseModel):
@@ -31,6 +30,8 @@ class UserBase(BaseModel):
     email: str
     active: Optional[bool] = True
 
+    class Config:
+        from_attributes = True
 
 class UserCreate(UserBase):
     pass
@@ -41,7 +42,7 @@ class UserUpdate(UserBase):
     active: Optional[bool] = None
 
 class UserResponse(UserBase):
-    id: int
+    id: uuid.UUID
     created_at: datetime
     updated_at: datetime
 

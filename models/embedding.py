@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, Text, UniqueConstraint, String
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import UUID
 from .base import Base
+import uuid
 
 class Embedding(Base):
     """
@@ -10,15 +12,17 @@ class Embedding(Base):
     """
     __tablename__ = "embeddings"
 
-    id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(String, ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     page = Column(Integer, nullable=False)
     chunk_text = Column(Text, nullable=False)
     embedding = Column(Vector(1536)) 
-    last_updated = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Define relationship with Item model
     item = relationship("Item", back_populates="embeddings")
+    messages = relationship("Message", back_populates="source_embedding")
 
     # Composite unique constraint and table configuration
     __table_args__ = (

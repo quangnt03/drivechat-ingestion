@@ -1,19 +1,19 @@
 import os
 from tempfile import TemporaryDirectory
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, APIRouter
 from pydantic import BaseModel
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.core import SimpleDirectoryReader
-from llama_index.core.text_splitter import SentenceSplitter
 import tempfile
-from typing import List, Dict
 from dotenv import load_dotenv, find_dotenv
 from dependencies.security import validate_token
 load_dotenv(find_dotenv())
 from utils.gdrive import GoogleDriveClient  # noqa: E402
 from services.db import DatabaseService  # noqa: E402
-from services.user import UserService # noqa: E402
 from services.embedding import EmbeddingService # noqa: E402
+from services.user import UserService # noqa: E402
+from uuid import UUID
+from services.conversation import ConversationService
+
+
 app = FastAPI()
 
 # Configuration
@@ -23,7 +23,7 @@ DB_CONNECTION = os.getenv("DATABASE_URL")
 
 class DriveUrl(BaseModel):
     driver_id: str
-    conversation_id: str
+    conversation_id: UUID
 
 
 gclient = GoogleDriveClient(CREDENTIALS_PATH)
@@ -34,12 +34,15 @@ embedding_service = EmbeddingService(OPENAI_API_KEY)
 @app.post("/api/v1/upload")
 async def upload_file(file: DriveUrl, user = Depends(validate_token)):
     owner = user['UserAttributes'][0]['Value']
-    
     user_service = UserService(db_service.session)
-    
     user = user_service.get_user_by_email(owner)
     if not user:
         user = user_service.create_user(owner)
+    
+    conversation_service = ConversationService(db_service.session)
+    conversation = conversation_service.get_conversation(file.conversation_id, user.id)
+    if not conversation:
+        raise HTTPException(status_code=400, detail="Conversation not found")
     
     try:
         file_id, file_type = gclient.get_gdrive_id(file.driver_id)
@@ -76,7 +79,12 @@ async def upload_file(file: DriveUrl, user = Depends(validate_token)):
                 )
 
                 # Insert document and chunks into database
-                item = db_service.insert_document_with_embeddings(nodes, formatted_metadata)
+                item = db_service.insert_document_with_embeddings(
+                    nodes=nodes, 
+                    metadata=formatted_metadata,
+                    owner_id=user.id,
+                    conversation_id=file.conversation_id
+                )
                 if not item:
                     raise HTTPException(
                         status_code=500,
