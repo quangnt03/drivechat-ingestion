@@ -1,6 +1,7 @@
 import os
 from tempfile import TemporaryDirectory
-from fastapi import FastAPI, HTTPException, Depends, APIRouter
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import tempfile
 from dotenv import load_dotenv, find_dotenv
@@ -30,6 +31,13 @@ gclient = GoogleDriveClient(CREDENTIALS_PATH)
 db_service = DatabaseService(DB_CONNECTION)
 embedding_service = EmbeddingService(OPENAI_API_KEY)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/api/v1/upload")
 async def upload_file(file: DriveUrl, user = Depends(validate_token)):
