@@ -17,7 +17,7 @@ def validate_token(http_authorization_credentials=Depends(reusable_oauth2)) -> s
         )        
     except Exception as _:
         raise HTTPException(
-            status_code=403,
+            status_code=401,
             detail="Could not validate credentials",
         )
     is_verified = user['UserAttributes'][1]['Value']

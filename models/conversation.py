@@ -22,6 +22,7 @@ class Conversation(Base):
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     items = relationship("Item", back_populates="conversation", cascade="all, delete-orphan")
+    embeddings = relationship("Embedding", back_populates="conversation", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Conversation(id={self.id}, title='{self.title}')>"

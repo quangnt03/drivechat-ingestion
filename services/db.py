@@ -91,6 +91,7 @@ class DatabaseService:
                         page=page,
                         chunk_text=node.get_content(),
                         embedding=node.embedding,
+                        conversation_id=conversation_id
                     )
                     session.add(embedding)
                     session.flush()
